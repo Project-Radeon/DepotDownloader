@@ -29,4 +29,8 @@
     <PackageReference Include="QRCoder" Version="1.7.0" />
     <PackageReference Include="SteamKit2" Version="3.3.0" />
   </ItemGroup>
+
+  <PropertyGroup Condition=" '$(OS)' == 'Windows_NT' ">
+    <DefineConstants>_OS_FLAVOR_WINDOWS</DefineConstants>
+  </PropertyGroup>
 </Project>

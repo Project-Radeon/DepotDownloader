@@ -8,10 +8,14 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
+using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using SteamKit2;
 using SteamKit2.CDN;
+using SteamKit2.Internal;
 
 namespace DepotDownloader
 {
@@ -296,20 +300,73 @@ namespace DepotDownloader
             return info["name"].AsString();
         }
 
-        public static bool InitializeSteam3(string username, string password)
+        private static async Task<string?> DeriveClientTokenAsync(string refreshToken, ulong steamId)
         {
-            string loginToken = null;
+            using var client = new HttpClient();
+            var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["refresh_token"] = refreshToken,
+                ["steamid"] = steamId.ToString(),
+                ["renewal_type"] = "0"
+            });
 
-            if (username != null && Config.RememberPassword)
+            var response = await client.PostAsync("https://api.steampowered.com/IAuthenticationService/GenerateAccessTokenForApp/v1/", content);
+            response.EnsureSuccessStatusCode();
+
+            var json = await response.Content.ReadAsStringAsync();
+            Console.WriteLine(json);
+
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.GetProperty("response").GetProperty("access_token").GetString();
+        }
+
+        public static async Task<bool> InitializeSteam3Async(
+            string username,
+            string password,
+            ulong? steamId = null,
+            string? steamToken = null)
+        {
+            string? loginToken = steamToken;
+
+            // Attempt to retrieve saved login token if none provided
+            if (username != null && Config.RememberPassword && string.IsNullOrEmpty(steamToken))
             {
                 _ = AccountSettingsStore.Instance.LoginTokens.TryGetValue(username, out loginToken);
             }
+            else if (!string.IsNullOrEmpty(steamToken) && steamId.HasValue)
+            {
+                Console.WriteLine("Web refresh token detected. Deriving client token via Web API...");
 
+                try
+                {
+                    loginToken = await DeriveClientTokenAsync(steamToken, steamId.Value);
+
+                    if (string.IsNullOrEmpty(loginToken))
+                    {
+                        Console.WriteLine("Failed to derive client token from web token.");
+                        return false;
+                    }
+
+                    Console.WriteLine("Successfully derived client token from web refresh token!");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error deriving client token: {ex.Message}");
+                    return false;
+                }
+            }
+            else if (string.IsNullOrEmpty(loginToken) && string.IsNullOrEmpty(password))
+            {
+                Console.WriteLine("Unable to get Steam3 credentials. Did you provide the correct -steamid and -token argument?");
+                return false;
+            }
+
+            // --- Begin Steam3Session login ---
             steam3 = new Steam3Session(
                 new SteamUser.LogOnDetails
                 {
                     Username = username,
-                    Password = loginToken == null ? password : null,
+                    Password = string.IsNullOrEmpty(loginToken) ? password : null,
                     ShouldRememberPassword = Config.RememberPassword,
                     AccessToken = loginToken,
                     LoginID = Config.LoginID ?? 0x534B32, // "SK2"
@@ -318,12 +375,11 @@ namespace DepotDownloader
 
             if (!steam3.WaitForCredentials())
             {
-                Console.WriteLine("Unable to get steam3 credentials.");
+                Console.WriteLine("Unable to get Steam3 credentials.");
                 return false;
             }
 
             Task.Run(steam3.TickCallbacks);
-
             return true;
         }
 

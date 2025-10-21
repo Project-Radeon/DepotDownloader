@@ -28,6 +28,7 @@ namespace DepotDownloader
             }
         }
 
+#if _OS_FLAVOR_WINDOWS
         [SupportedOSPlatform("windows5.0")]
         public static void VerifyConsoleLaunch()
         {
@@ -47,5 +48,6 @@ namespace DepotDownloader
                 Windows.Win32.UI.WindowsAndMessaging.MESSAGEBOX_STYLE.MB_OK | Windows.Win32.UI.WindowsAndMessaging.MESSAGEBOX_STYLE.MB_ICONWARNING
             );
         }
+#endif
     }
 }

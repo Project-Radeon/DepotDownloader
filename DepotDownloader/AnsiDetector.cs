@@ -7,8 +7,11 @@ using System;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+
+#if _OS_FLAVOR_WINDOWS
 using Windows.Win32;
 using Windows.Win32.System.Console;
+#endif
 
 namespace Spectre.Console;
 
@@ -73,9 +76,15 @@ internal static class AnsiDetector
     {
         isLegacy = false;
 
+#if !_OS_FLAVOR_WINDOWS
+        // Linux terminals have support for ANSI by default.
+        // If they do not, which is a small possibility, they are running an old version.
+        return true;
+#else
         try
         {
-            var @out = PInvoke.GetStdHandle_SafeHandle(stdError ? STD_HANDLE.STD_ERROR_HANDLE :STD_HANDLE.STD_OUTPUT_HANDLE);
+            var @out =
+ PInvoke.GetStdHandle_SafeHandle(stdError ? STD_HANDLE.STD_ERROR_HANDLE :STD_HANDLE.STD_OUTPUT_HANDLE);
 
             if (!PInvoke.GetConsoleMode(@out, out var mode))
             {
@@ -113,5 +122,6 @@ internal static class AnsiDetector
             // All we know here is that we don't support ANSI.
             return false;
         }
+#endif
     }
 }

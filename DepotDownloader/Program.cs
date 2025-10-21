@@ -26,10 +26,10 @@ namespace DepotDownloader
                 PrintVersion();
                 PrintUsage();
 
+#if _OS_FLAVOR_WINDOWS
                 if (OperatingSystem.IsWindowsVersionAtLeast(5, 0))
-                {
                     PlatformUtilities.VerifyConsoleLaunch();
-                }
+#endif
 
                 return 0;
             }
@@ -66,6 +66,8 @@ namespace DepotDownloader
 
             var username = GetParameter<string>(args, "-username") ?? GetParameter<string>(args, "-user");
             var password = GetParameter<string>(args, "-password") ?? GetParameter<string>(args, "-pass");
+            var steamToken = GetParameter<string>(args, "-token") ?? GetParameter<string>(args, "-logintoken");
+
             ContentDownloader.Config.RememberPassword = HasParameter(args, "-remember-password");
             ContentDownloader.Config.UseQrCode = HasParameter(args, "-qr");
             ContentDownloader.Config.SkipAppConfirmation = HasParameter(args, "-no-mobile");
@@ -174,7 +176,7 @@ namespace DepotDownloader
 
                 PrintUnconsumedArgs(args);
 
-                if (InitializeSteam(username, password))
+                if (await InitializeSteamAsync(username, password, steamToken))
                 {
                     try
                     {
@@ -211,7 +213,7 @@ namespace DepotDownloader
 
                 PrintUnconsumedArgs(args);
 
-                if (InitializeSteam(username, password))
+                if (await InitializeSteamAsync(username, password, steamToken))
                 {
                     try
                     {
@@ -309,7 +311,7 @@ namespace DepotDownloader
 
                 PrintUnconsumedArgs(args);
 
-                if (InitializeSteam(username, password))
+                if (await InitializeSteamAsync(username, password, steamToken))
                 {
                     try
                     {
@@ -344,11 +346,43 @@ namespace DepotDownloader
             return 0;
         }
 
-        static bool InitializeSteam(string username, string password)
+        // Probably a huge change, but who cares. This will never make it to upstream.
+        static async Task<bool> InitializeSteamAsync(string username, string password, [Optional] string? steamToken)
         {
-            if (!ContentDownloader.Config.UseQrCode)
+            ulong? steamId = null;
+            if (!string.IsNullOrEmpty(steamToken))
             {
-                if (username != null && password == null && (!ContentDownloader.Config.RememberPassword || !AccountSettingsStore.Instance.LoginTokens.ContainsKey(username)))
+                try
+                {
+                    var parts = steamToken.Split('.');
+                    if (parts.Length >= 2)
+                    {
+                        var payload = parts[1];
+                        switch (payload.Length % 4)
+                        {
+                            case 2: payload += "=="; break;
+                            case 3: payload += "="; break;
+                        }
+
+                        var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(payload));
+                        var match = System.Text.RegularExpressions.Regex.Match(json, @"""sub"":\s*""(\d+)""");
+                        if (match.Success)
+                        {
+                            steamId = ulong.Parse(match.Groups[1].Value);
+                            Console.WriteLine($"Extracted SteamID: {steamId}");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Warning: Could not extract SteamID from token: {ex.Message}");
+                }
+            }
+
+            if (!ContentDownloader.Config.UseQrCode || string.IsNullOrEmpty(steamToken))
+            {
+                if (username != null && password == null && string.IsNullOrEmpty(steamToken) &&
+                    (!ContentDownloader.Config.RememberPassword || !AccountSettingsStore.Instance.LoginTokens.ContainsKey(username)))
                 {
                     if (AccountSettingsStore.Instance.LoginTokens.ContainsKey(username))
                     {
@@ -377,7 +411,7 @@ namespace DepotDownloader
                 }
             }
 
-            if (!string.IsNullOrEmpty(password))
+            if (!string.IsNullOrEmpty(password) && string.IsNullOrEmpty(steamToken))
             {
                 const int MAX_PASSWORD_SIZE = 64;
 
@@ -392,7 +426,7 @@ namespace DepotDownloader
                 }
             }
 
-            return ContentDownloader.InitializeSteam3(username, password);
+            return await ContentDownloader.InitializeSteam3Async(username, password, steamId, steamToken);
         }
 
         static int IndexOfParam(string[] args, string param)
@@ -515,6 +549,7 @@ namespace DepotDownloader
             Console.WriteLine("  -username <user>         - the username of the account to login to for restricted content.");
             Console.WriteLine("  -password <pass>         - the password of the account to login to for restricted content.");
             Console.WriteLine("  -remember-password       - if set, remember the password for subsequent logins of this user.");
+            Console.WriteLine("  -token <logintoken>      - if set, caches the token and bypasses traditional login flow.");
             Console.WriteLine("                             use -username <username> -remember-password as login credentials.");
             Console.WriteLine("  -qr                      - display a login QR code to be scanned with the Steam mobile app");
             Console.WriteLine("  -no-mobile               - prefer entering a 2FA code instead of prompting to accept in the Steam mobile app");
