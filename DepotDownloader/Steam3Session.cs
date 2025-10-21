@@ -5,6 +5,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -345,7 +346,6 @@ namespace DepotDownloader
 
             throw new Exception($"EResult {(int)details.Result} ({details.Result}) while retrieving file details for pubfile {pubFile}.");
         }
-
 
         public async Task<SteamCloud.UGCDetailsCallback> GetUGCDetails(UGCHandle ugcHandle)
         {
@@ -705,15 +705,8 @@ namespace DepotDownloader
             // Encode the link as a QR code
             using var qrGenerator = new QRCodeGenerator();
             var qrCodeData = qrGenerator.CreateQrCode(challengeUrl, QRCodeGenerator.ECCLevel.L);
-            using var qrCode = new AsciiQRCode(qrCodeData);
-            var qrCodeAsAsciiArt = qrCode.GetLineByLineGraphic(1, drawQuietZones: true);
-
-            Console.WriteLine("Use the Steam Mobile App to sign in with this QR code:");
-
-            foreach (var line in qrCodeAsAsciiArt)
-            {
-                Console.WriteLine(line);
-            }
+            using var qrCode = new PngByteQRCode(qrCodeData);
+            File.WriteAllBytes("qr.png", qrCode.GetGraphic(15, false));
         }
     }
 }

@@ -303,6 +303,8 @@ namespace DepotDownloader
         private static async Task<string?> DeriveClientTokenAsync(string refreshToken, ulong steamId)
         {
             using var client = new HttpClient();
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("DepotDownloader/1.0");
+
             var content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["refresh_token"] = refreshToken,
@@ -314,10 +316,15 @@ namespace DepotDownloader
             response.EnsureSuccessStatusCode();
 
             var json = await response.Content.ReadAsStringAsync();
-            Console.WriteLine(json);
-
             using var doc = JsonDocument.Parse(json);
-            return doc.RootElement.GetProperty("response").GetProperty("access_token").GetString();
+            var responseElement = doc.RootElement.GetProperty("response");
+
+            if (responseElement.GetPropertyCount() == 0)
+            {
+                Console.WriteLine("Failed to get derived token from SteamAPI");
+                return null;
+            }
+            return responseElement.GetProperty("access_token").GetString();
         }
 
         public static async Task<bool> InitializeSteam3Async(
@@ -355,7 +362,7 @@ namespace DepotDownloader
                     return false;
                 }
             }
-            else if (string.IsNullOrEmpty(loginToken) && string.IsNullOrEmpty(password))
+            else if (string.IsNullOrEmpty(loginToken) && string.IsNullOrEmpty(password) && !string.IsNullOrEmpty(username))
             {
                 Console.WriteLine("Unable to get Steam3 credentials. Did you provide the correct -steamid and -token argument?");
                 return false;
